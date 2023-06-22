@@ -83,7 +83,7 @@ tarrant_key_dates <- data.frame(key_date)
 tarrant_key_dates$key_date <- as.Date(tarrant_key_dates$key_date,format = "%Y-%m-%d")
 tarrant_key_dates$Count <- tarrant_cases$value[tarrant_cases$Date_final %in% tarrant_key_dates$key_date]
 
-chart1 <- ggplot()+
+chart1 <- suppressWarnings({ ggplot()+
   geom_line(data = tarrant_cases,aes(x = Date_final , y = value), color = "blue", size = 1)+
   geom_line(data = tarrant_deaths,aes(x = Date_final, y = value), color = "red", size = 1)+
   geom_point(data = tarrant_key_dates, aes(x = key_date, y = Count), color = "black", size = 3)+
@@ -93,7 +93,7 @@ chart1 <- ggplot()+
   xlab("Date")+
   ggtitle("Tarrant County Covid-19 Case and Death Counts")+
   theme(plot.title = element_text(hjust = 0.5))
-  
+})
 chart1
 ```
 
@@ -107,27 +107,27 @@ total_data_comb <- as.data.frame(matrix(data = NA, nrow = 1143, ncol = 5))
 colnames(total_data_comb) <- c("final_date","active","deaths","recovered","uninfected")
 total_data_comb$final_date <- tarrant_cases$Date_final
 
-for(i in 1:nrow(total_data_comb)){
- total_data_comb$deaths[i]<- sum(global_death_long$value[global_death_long$date_final==total_data_comb$final_date[i]])
- total_data_comb$recovered[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]-30])
- total_data_comb$active[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]])-total_data_comb$recovered[i]
- if(i ==1){
-   total_data_comb$uninfected[i] <- 7888000000
- } else {
-   total_data_comb$uninfected[i] <- 7888000000-total_data_comb$active[i]-total_data_comb$deaths[i]-total_data_comb$recovered[i]
- }
-}
-total_data_comb$uninfected <- 7888000000
-ggplot(data = total_data_comb)+
-  geom_line(aes(x = final_date, y = uninfected),color = "gray")+
-  geom_area(aes(x = final_date, y = uninfected), fill = "gray")+
-  geom_line(aes(x = final_date, y = recovered),color = "green")+
-  geom_area(aes(x = final_date, y = recovered),fill = "green")+
-  geom_line(aes(x = final_date, y = active),color = "blue")+
-  geom_area(aes(x = final_date, y = active),fill = "blue")+
-  geom_line(aes(x = final_date, y = deaths),color = "black")+
-  geom_area(aes(x = final_date, y = deaths),fill = "black")+
-  ylim(0,7888000000)
+# for(i in 1:nrow(total_data_comb)){
+#  total_data_comb$deaths[i]<- sum(global_death_long$value[global_death_long$date_final==total_data_comb$final_date[i]])
+#  total_data_comb$recovered[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]-30])
+#  total_data_comb$active[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]])-total_data_comb$recovered[i]
+#  if(i ==1){
+#    total_data_comb$uninfected[i] <- 7888000000
+#  } else {
+#    total_data_comb$uninfected[i] <- 7888000000-total_data_comb$active[i]-total_data_comb$deaths[i]-total_data_comb$recovered[i]
+#  }
+# }
+# total_data_comb$uninfected <- 7888000000
+# ggplot(data = total_data_comb)+
+#   geom_line(aes(x = final_date, y = uninfected),color = "gray")+
+#   geom_area(aes(x = final_date, y = uninfected), fill = "gray")+
+#   geom_line(aes(x = final_date, y = recovered),color = "green")+
+#   geom_area(aes(x = final_date, y = recovered),fill = "green")+
+#   geom_line(aes(x = final_date, y = active),color = "blue")+
+#   geom_area(aes(x = final_date, y = active),fill = "blue")+
+#   geom_line(aes(x = final_date, y = deaths),color = "black")+
+#   geom_area(aes(x = final_date, y = deaths),fill = "black")+
+#   ylim(0,7888000000)
 
 
 # us_case_long <- us_data[us_data$Admin2.case=="Tarrant",]
@@ -146,11 +146,18 @@ us_data_comb <- as.data.frame(matrix(data = NA, nrow = 1143, ncol = 5))
 colnames(us_data_comb) <- c("final_date","active","deaths","recovered","uninfected")
 us_data_comb$final_date <- tarrant_cases$Date_final
 
+us_data_comb$Rt <- NA
 for(i in 1:nrow(us_data_comb)){
  us_data_comb$deaths[i]<- sum(us_deaths_long$value[us_deaths_long$Date_final==us_data_comb$final_date[i]])
  us_data_comb$recovered[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]-30])
  us_data_comb$active[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])-us_data_comb$recovered[i]
- print(i)
+ us_data_comb$cases[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])
+ if(i==1){
+   us_data_comb$Rt[i] <- 0
+ }else {
+ us_data_comb$Rt[i] <- (us_data_comb$cases[i]-us_data_comb$cases[i-1])/((us_data_comb$recovered[i]-us_data_comb$recovered[i-1])+(us_data_comb$deaths[i]-us_data_comb$deaths[i-1]))
+ }
+ us_data_comb$Rt7 <-
 }
 
 us_data_comb$uninfected <- 331900000
@@ -174,6 +181,10 @@ chart2 <- ggplot(data = us_data_comb)+
   theme(plot.title = element_text(hjust = .5))
 
 chart2
+
+
+
+
 ```
 
 
