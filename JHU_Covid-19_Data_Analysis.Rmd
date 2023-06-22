@@ -1,0 +1,107 @@
+---
+title: "Johns Hopkins Covid-19 Data Analysis"
+date: "06/20/2023"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+## Setup: 
+```{r}
+suppressPackageStartupMessages({
+    library(tidyverse)
+    library(lubridate)
+    library(ggplot2)
+    library(leaflet)
+    library(gganimate)
+    library(gifski)
+    library(maps)
+})
+confirmed_us <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
+confirmed_global <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+death_us <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv")
+death_global <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+
+options(scipen = 100)
+```
+
+## Cleaning the data:
+
+```{r}
+confirmed_global$Key <- paste0(confirmed_global$Province.State, confirmed_global$Country.Region)
+death_global$Key <- paste0(death_global$Province.State,death_global$Country.Region)
+
+us_data <- left_join(confirmed_us, death_us, by = "Combined_Key", suffix = c(".case",".death"))
+global_data <- left_join(confirmed_global, death_global, by = "Key", suffix = c(".case",".death"))
+
+us_data$case_sum <- us_data$X3.9.23.case
+# us_data$case_sum[us_data$case_sum>100000] <- 100000
+us_data$case_rate <- (us_data$case_sum/us_data$Population)*100000
+us_data$case_rate <- ifelse(us_data$case_rate==0 | is.nan(us_data$case_rate) | us_data$case_rate==Inf, yes = 0, no = us_data$case_rate)
+```
+
+
+## Visualization: 
+
+```{r}
+us_map <- map_data("county")
+us_map$Combined_Key <- toupper(paste(us_map$subregion, us_map$region, "US", sep = ", "))
+us_data$Combined_Key <- toupper(us_data$Combined_Key)
+
+
+us_map <- left_join(us_map, us_data, by = "Combined_Key")
+
+us_map$case_rate2 <- us_map$case_rate
+us_map$case_rate2[us_map$case_rate2>100000] <- 100000
+
+map1 <- ggplot(data = us_map, aes(x = long, y = lat, group = group, fill = case_rate2))+
+  geom_polygon(color = "white", size = .001)+
+  coord_quickmap()+
+  # scale_fill_gradient2(low = "#ffeda0",mid = "#feb24c", high = "#f03b20", midpoint = mean(us_data$case_rate)/3)
+  scale_fill_viridis_c(option = "rocket", direction = -1, name = "Cases per 100K", labels = c("0","25,000","50,000","75,000","10,0000+"))+
+  theme_void()+
+  ggtitle("US Counties by Cases per 100K population")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+map1
+```
+
+```{r}
+tarrant_data <- us_data[us_data$Admin2.case=="Tarrant",]
+
+tarrant_cases <- tarrant_data[,grepl(".case",colnames(tarrant_data))]
+tarrant_cases <- pivot_longer(tarrant_cases,cols = c(11:1153))
+tarrant_cases$Date_final <- gsub("X|.case","",tarrant_cases$name)
+tarrant_cases$Date_final<- as.Date(tarrant_cases$Date_final, format = "%m.%d.%y")
+
+tarrant_deaths <- tarrant_data[,grepl(".death",colnames(tarrant_data))]
+tarrant_deaths <- pivot_longer(tarrant_deaths,cols = c(11:1153))
+tarrant_deaths$Date_final <- gsub("X|.death","",tarrant_deaths$name)
+tarrant_deaths$Date_final <- as.Date(tarrant_deaths$Date_final, format = "%m.%d.%y")
+
+key_date <- c("2020-03-12","2020-10-11","2021-07-14","2021-12-08","2022-06-02","2022-12-02")
+tarrant_key_dates <- data.frame(key_date)
+tarrant_key_dates$key_date <- as.Date(tarrant_key_dates$key_date,format = "%Y-%m-%d")
+tarrant_key_dates$Count <- tarrant_cases$value[tarrant_cases$Date_final %in% tarrant_key_dates$key_date]
+
+ggplot()+
+  geom_line(data = tarrant_cases,aes(x = Date_final , y = value), color = "blue", size = 1)+
+  geom_line(data = tarrant_deaths,aes(x = Date_final, y = value), color = "red", size = 1)+
+  geom_point(data = tarrant_key_dates, aes(x = key_date, y = Count), color = "black", size = 3)+
+  geom_text(data = tarrant_key_dates, aes(x = key_date, y = Count, label = key_date), hjust = 0, vjust = 1.4)+
+  ylim(-10000,700000)+
+  ylab("Number of Cases and Deaths")+
+  xlab("Date")+
+  ggtitle("Tarrant County Covid-19 Case and Death Counts")+
+  theme(plot.title = element_text(hjust = 0.5))
+  
+
+```
+
+
+## Analysis: 
+
+```{r}
+
+
+```
+
