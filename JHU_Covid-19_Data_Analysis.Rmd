@@ -97,6 +97,29 @@ ggplot()+
 
 ```
 
+Let's look at percent of total population in recovered, deaths, uninfected, active
+```{r}
+global_case_long <- pivot_longer(confirmed_global,cols = c(5:1147))
+global_case_long$date_final <- as.Date(gsub("X","",global_case_long$name),format = "%m.%d.%y")
+global_death_long <- pivot_longer(death_global, cols = c(5:1147))
+global_death_long$date_final <- as.Date(gsub("X","",global_death_long$name),format = "%m.%d.%y")
+total_data_comb <- as.data.frame(matrix(data = NA, nrow = 1143, ncol = 5))
+colnames(total_data_comb) <- c("final_date","active","deaths","recovered","uninfected")
+total_data_comb$final_date <- tarrant_cases$Date_final
+
+for(i in 1:nrow(total_data_comb)){
+ total_data_comb$deaths[i]<- sum(global_death_long$value[global_death_long$date_final==total_data_comb$final_date[i]])
+ total_data_comb$recovered[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]-30])
+ total_data_comb$active[i] <- sum(global_case_long$value[global_case_long$date_final==total_data_comb$final_date[i]])-total_data_comb$recovered[i]-total_data_comb$deaths[i]
+ if(i ==1){
+   total_data_comb$uninfected[i] <- 7888000000
+ } else {
+   total_data_comb$uninfected[i] <- total_data_comb$uninfected[i-1]-total_data_comb$active[i]-total_data_comb$deaths[i]-total_data_comb$recovered[i]
+ }
+}
+
+```
+
 
 ## Analysis: 
 
