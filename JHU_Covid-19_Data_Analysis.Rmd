@@ -6,16 +6,15 @@ output:
     highlight: kate
 ---
 ## Setup: 
-```{r}
+
+First we need to load in our data and load the packages that we will use throughout this analysis. Tidyverse and Lubridate are used for data wrangling and cleaning. Maps and ggplot2 are used for visualizations and maps will download pre-made shape data files given a specific location. EpiEstim is a very useful package that is used by epidemiologists and public health officials to help calculate R0 and Rt values for a given dataset. All datasets used in this analysis can be found at https://github.com/CSSEGISandData/COVID-19. 
+```{r setup}
 suppressPackageStartupMessages({
     library(tidyverse)
     library(lubridate)
     library(ggplot2)
-    library(leaflet)
-    library(gganimate)
-    library(gifski)
     library(maps)
-  library(EpiEstim)
+    library(EpiEstim)
 })
 confirmed_us <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
 confirmed_global <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
@@ -26,6 +25,8 @@ options(scipen = 100)
 ```
 
 ## Cleaning the data:
+
+So let's start by cleaning and preparing our data for whatever visualizations and analysis we want to do. To start we have 4 datasets. 2 are for global data and 2 are for US data. We can easily combine our datasets with joins to get a full US dataset and a full Global dataset. Now we have our death and case counts in the same dataframes. I also noticed that our data spans a range of january 2020 to march 2023. To get our latest counts of cases, we can take the data from 3/9/2023. 
 
 ```{r Initial Cleaning}
 confirmed_global$Key <- paste0(confirmed_global$Province.State, confirmed_global$Country.Region)
@@ -38,27 +39,22 @@ us_data$case_sum <- us_data$X3.9.23.case
 us_data$death_sum <- us_data$X3.9.23.death
 ```
 
-```{r Case Rates and Death Rates}
-us_data$case_rate <- (us_data$case_sum/us_data$Population)*100000
-us_data$case_rate <- ifelse(us_data$case_rate==0 | is.nan(us_data$case_rate) | us_data$case_rate==Inf, yes = 0, no = us_data$case_rate)
-
-us_data$death_rate <- (us_data$death_sum/us_data$Population)*100000
-us_data$death_rate <- ifelse(us_data$death_rate==0 | is.nan(us_data$death_rate) | us_data$death_rate==Inf, yes = 0, no = us_data$death_rate)
-
-```
-
+I know I want to make a map with some of our data so let's grab some shape/polygon data for the us and we can take a look at case rates by county. Once we get our shape data we can combine it with the US data that we created earlier. Now we can calculate the final case rate for each county in the US. However, there are a few outlier counties so we can create a new column for case rate that changes the rates that are over 100,000 to be 100,000. Now we can still get a visually pleasing scale for fill color and can still show those that are over 100K. 
 
 ```{r Map Data}
 us_map <- map_data("county")
 us_map$Combined_Key <- toupper(paste(us_map$subregion, us_map$region, "US", sep = ", "))
 us_data$Combined_Key <- toupper(us_data$Combined_Key)
 
+us_data$case_rate <- (us_data$case_sum/us_data$Population)*100000
 
 us_map <- left_join(us_map, us_data, by = "Combined_Key")
 
 us_map$case_rate2 <- us_map$case_rate
 us_map$case_rate2[us_map$case_rate2>100000] <- 100000
 ```
+
+Because we have case and death data on a county basis, I wanted to look at the the covid data for the county I live in. First we subset the data to just be Tarrant county. Next we need to convert our date data to long format instead of wide. We can use a helpful function called pivot_longer to indicate which columns need to be transformed. Now we have the daily case and death counts for the county. 
 
 ```{r Tarrant Data}
 tarrant_data <- us_data[us_data$Admin2.case=="Tarrant",]
@@ -73,6 +69,9 @@ tarrant_deaths <- pivot_longer(tarrant_deaths,cols = c(11:1153))
 tarrant_deaths$Date_final <- gsub("X|.death","",tarrant_deaths$name)
 tarrant_deaths$Date_final <- as.Date(tarrant_deaths$Date_final, format = "%m.%d.%y")
 ```
+
+A common modeling technique in Epidemiology is a Susceptible, Infectious, Recovered Chart. These help give an indication of how rapidly a disease is spreading while examining the percentage of the population that has still not been infected. These are often used to model the outbreak and virulence factors of disease. Instead of modeling future data, we will use our existing data to show that the SIR chart for the US has looked like so far. There are many factors that go into these types of models but I have tried to keep this chart very simple. To create this chart, we need a starting population which for the US I am using 336,000,000. Next we need the total amount of cases and death's each day. We also need to calculate how many of our cases have already recovered from the disease. We will use an estimate of an average 30 days from event date to recovery from covid. This 30 day average is roughly in the middle of the expected 2 to 6 weeks of recovery that is standard. we can figure out the active cases by subtracting our current case count by the current recovered cases. The US population estimate is taken the Congressional Budget Office at:
+https://www.cbo.gov/publication/58912
 
 ```{r SIR Chart Data}
 global_case_long <- pivot_longer(confirmed_global,cols = c(5:1147))
@@ -100,8 +99,6 @@ colnames(us_data_comb) <- c("final_date","active","deaths","recovered","uninfect
 us_data_comb$final_date <- tarrant_cases$Date_final
 
 
-### This is half the time
-system.time({
   us_long_val <- us_case_long$value
   us_long_val2 <- us_deaths_long$value
   us_long_date <- us_case_long$Date_final
@@ -127,11 +124,15 @@ system.time({
   us_data_comb$deaths <- us_deaths
   us_data_comb$recovered <- us_recovered
   us_data_comb$cases <- us_cases
-})
 
+## US population
 us_data_comb$uninfected <- 336000000
 
 ```
+
+A common metric of infectious disease is the R0 number. This is the number of contacts that we except to become infected given one active case. This metric is very useful for determining the spread and virulence of a disease. We can also use a similar metric called Rt which looks at the disease spread using Serial intervals. We this done over a running total for 7 days. In both measurements, a value less than 1 would indicate that the disease is dissappearing while a value greater than 1 indicates that the disease is spreading. To help make this calculate, we will use a package called EpiEstim to calculate the Rt value per day for our US case data. Serial Interval values were taken from the following paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7448781/
+
+More can be learned on Rt values with the following website: https://www.frontiersin.org/articles/10.3389/fpubh.2020.556689/full
 
 ```{r US Rt Data}
 us_data_comb$new_cases <- NA
@@ -152,9 +153,22 @@ Rt_data <- rbind(missing_Rt, Rt_data)
 us_data_comb_Rt <- cbind(us_data_comb[90:nrow(us_data_comb),],Rt_data)
 ```
 
+Lastly, we can calculate our daily case rate and death rate per 100K people for our US data. Again, we are using a population estimate of 336,000,000. Now we can create a linear model between our two rates and run a prediction to our expected correlation between the two variables. 
+
+```{r Case Rates and Death Rates}
+us_data_comb$case_rate <- (us_data_comb$cases/336000000)*100000
+us_data_comb$death_rate <- (us_data_comb$deaths/336000000)*100000
+
+
+death_case_mod <- lm(death_rate ~ case_rate, data = us_data_comb)
+us_data_comb$death_case_pred <- predict(death_case_mod)
+
+```
+
 
 ## Visualization: 
 
+This map indicates the Case Rate per 100K people for every available county in the US. Typically, higher values tend to be grouped together on the map which is expected. During reduced travel, you expect to see regions have similar values. Additionally, there are some counties that appear to be outliers compared to their surrounding. Often these outliers are counties with a very low population which makes the case rate disproportionately high.
 ```{r Map1}
 
 map1 <- ggplot(data = us_map, aes(x = long, y = lat, group = group, fill = case_rate2))+
@@ -168,6 +182,7 @@ map1 <- ggplot(data = us_map, aes(x = long, y = lat, group = group, fill = case_
 
 map1
 ```
+Now we can look at the data for my county. This shows a running count of cases and deaths within the county. I also selected a few key dates to make it easier to see when there were large spikes in the case count. These jumps often correlate to the emergence of a new Covid-19 variant. The largest spike beginning in December 2021 correlates with the emergence of the Omicron variant. This chart matches very closely with the official Covid-19 Case chart which can be found at: https://www.tarrantcountytx.gov/en/public-health/disease-control---prevention/COVID-19.html
 
 ```{r Tarrant Cases}
 key_date <- c("2020-03-12","2020-10-11","2021-07-14","2021-12-08","2022-06-02","2022-12-02")
@@ -191,8 +206,8 @@ chart1 <- suppressWarnings({ ggplot()+
 })
 chart1
 ```
+Now we can plot our own version of the famous SIR chart that is often used in Epidemiology. Active cases follows closely with new cases. Similar to the previous cumulative case count chart, the active cases has spikes that correlate to the emergence of a new variant. We can also see that roughly 1/3 of the US population has been diagnosed with Covid-19 according to the chart. However, we know that there are other factors that are not considered here such as reinfection and duplicate data.
 
-Let's look at percent of total population in recovered, deaths, uninfected, active
 ```{r SIR Chart}
 chart2 <- ggplot(data = us_data_comb)+
   geom_area(aes(x = final_date, y = uninfected, color = "uninfected", fill = "uninfected"))+
@@ -214,7 +229,7 @@ chart2 <- ggplot(data = us_data_comb)+
 
 chart2
 ```
-
+The last visualization to show is the Rt value for the US over time. Similar to all our previous graphs, we expect Rt to parallel with our new cases to spikes in Rt indicate many new cases which is often caused by the presence of a new variant. Also, for this graph we needed to ignore the first few weeks of the pandemic. Models such as R0 and Rt become more accurate with more data so the start of the calculation will have a large deviation from the true mean until we have enough data to create a good model. 
 
 ```{r}
 Chart3 <- ggplot(data = us_data_comb_Rt[8:nrow(us_data_comb_Rt),])+
@@ -230,23 +245,26 @@ Chart3
 
 ## Modeling: 
 
+Now we can do some linear modeling and show our data. If we compare Case Rate and Death Rate, we expected these to be pretty positively correlated. The more people getting sick, the more likely one of those people is to die. Additionally, if there are more deaths, that would mean that someone was already sick before they died. 
+
+As expected, we see a very strong positive correlation between the two rates. Comparing our data versus the linear model, we see that the model follows very closely to the actual data values. An interesting thing to notice is that based on the model when we have a case rate of 0, we should expect a death rate of 50. Obviously this is not possible which could indicate some bias in the data or it could indicate that there are additional variables that are interacting between these two datasets. 
 ```{r}
-
-us_data_comb$case_rate <- (us_data_comb$cases/336000000)*100000
-us_data_comb$death_rate <- (us_data_comb$deaths/336000000)*100000
-
-
-death_case_mod <- lm(death_rate ~ case_rate, data = us_data_comb)
-us_data_comb$death_case_pred <- predict(death_case_mod)
-
-
 chart4 <- ggplot(data = us_data_comb)+
-  geom_point(aes(x = case_rate, y = death_rate), color = "blue")+
-  geom_line(aes(x = case_rate, y = death_case_pred), color = "red")
+  geom_point(aes(x = case_rate, y = death_rate, color = "Case Rate vs. Death Rate"))+
+  geom_line(aes(x = case_rate, y = death_case_pred, color = "Rate Model"), size = 1.5)+
+  xlab("Case Rate")+
+  ylab("Death Rate")+
+  theme_minimal()+
+  ggtitle("Case Rate vs. Death Rate with linear model")+
+  theme(plot.title = element_text(hjust = .5))
 
 chart4
 
 ```
 
+As with all data, there will be some inherent bias in the data and the way it is shown. Some important considerations when working with Covid-19 data is the fact that the Covid-19 situation is still evolving. There is still new data coming in and values used in calculations are still changing every day. One thing that is important to realize is that case definitions have continued to change throughout the pandemic. We expect there to be Covid-19 cases that are not represented in this data because someone may have never been tested. Additionally, someone may have met the criteria early on in the pandemic to be considered a suspected Epi cases which means they were not tested but an epidemiologist determined that their symptoms and prior exposure would mean they are a case. These standards have continued to change over time. We know that the prevalence of testing correlates with an increase of cases. 
 
-Bias, missing data and changes in reporting standards. Changes in case definition. Inaccuracies in JHU data. too many factors and individual data sources make it hard to accurately model. 
+Another concern with out initial data is that it may not be complete. JHU is collecting data from a variety of sources and location where each group may have slightly different reporting standards and practices. This could mean our data in inherently biased in one way or another. For this analysis, I chose multiple variables that went into the analysis. To get some of these values, I had to read through a variety of papers to choose a mean or some other variable that I believed would be most accurate. While I work in the public health field, I am not an expert research scientist or advanced epidemiologist so it is hard to verify that the article I am reading is free of inaccuracies. 
+
+Thank you for reading my brief analysis of the JHU Covid-19 data from: https://github.com/CSSEGISandData/COVID-19. 
+I hope you enjoyed and learned something new or fun along the way. 
