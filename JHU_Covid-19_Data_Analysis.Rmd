@@ -27,7 +27,7 @@ options(scipen = 100)
 
 ## Cleaning the data:
 
-```{r Initial Cleaning and Case Rates}
+```{r Initial Cleaning}
 confirmed_global$Key <- paste0(confirmed_global$Province.State, confirmed_global$Country.Region)
 death_global$Key <- paste0(death_global$Province.State,death_global$Country.Region)
 
@@ -35,10 +35,18 @@ us_data <- left_join(confirmed_us, death_us, by = "Combined_Key", suffix = c(".c
 global_data <- left_join(confirmed_global, death_global, by = "Key", suffix = c(".case",".death"))
 
 us_data$case_sum <- us_data$X3.9.23.case
-# us_data$case_sum[us_data$case_sum>100000] <- 100000
+us_data$death_sum <- us_data$X3.9.23.death
+```
+
+```{r Case Rates and Death Rates}
 us_data$case_rate <- (us_data$case_sum/us_data$Population)*100000
 us_data$case_rate <- ifelse(us_data$case_rate==0 | is.nan(us_data$case_rate) | us_data$case_rate==Inf, yes = 0, no = us_data$case_rate)
+
+us_data$death_rate <- (us_data$death_sum/us_data$Population)*100000
+us_data$death_rate <- ifelse(us_data$death_rate==0 | is.nan(us_data$death_rate) | us_data$death_rate==Inf, yes = 0, no = us_data$death_rate)
+
 ```
+
 
 ```{r Map Data}
 us_map <- map_data("county")
@@ -91,55 +99,6 @@ us_data_comb <- as.data.frame(matrix(data = NA, nrow = 1143, ncol = 5))
 colnames(us_data_comb) <- c("final_date","active","deaths","recovered","uninfected")
 us_data_comb$final_date <- tarrant_cases$Date_final
 
-system.time({
-  for(i in 1:nrow(us_data_comb)){
- us_data_comb$deaths[i]<- sum(us_deaths_long$value[us_deaths_long$Date_final==us_data_comb$final_date[i]])
- us_data_comb$recovered[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]-30])
- us_data_comb$active[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])-us_data_comb$recovered[i]
- us_data_comb$cases[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])
-}
-})
-
-system.time({
-  us_deaths <- numeric(nrow(us_data_comb))
-  us_recovered <- numeric(nrow(us_data_comb))
-  us_active <- numeric(nrow(us_data_comb))
-  us_cases <- numeric(nrow(us_data_comb))
-  for(i in 1:nrow(us_data_comb)){
- us_deaths[i]<- sum(us_deaths_long$value[us_deaths_long$Date_final==us_data_comb$final_date[i]])
- us_recovered[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]-30])
- us_active[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])-us_data_comb$recovered[i]
- us_cases[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])
-}
-})
-
-system.time({
-  us_deaths <- numeric(nrow(us_data_comb))
-  for(i in 1:nrow(us_data_comb)){
- us_deaths[i]<- sum(us_deaths_long$value[us_deaths_long$Date_final==us_data_comb$final_date[i]])
-}
-})
-
-system.time({
-  us_recovered <- numeric(nrow(us_data_comb))
-  for(i in 1:nrow(us_data_comb)){
- us_recovered[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]-30])
-}
-})
-
-system.time({
-  us_active <- numeric(nrow(us_data_comb))
-  for(i in 1:nrow(us_data_comb)){
- us_active[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])-us_data_comb$recovered[i]
-}
-})
-
-system.time({
-  us_cases <- numeric(nrow(us_data_comb))
-  for(i in 1:nrow(us_data_comb)){
- us_cases[i] <- sum(us_case_long$value[us_case_long$Date_final==us_data_comb$final_date[i]])
-}
-})
 
 ### This is half the time
 system.time({
@@ -170,7 +129,7 @@ system.time({
   us_data_comb$cases <- us_cases
 })
 
-us_data_comb$uninfected <- 331900000
+us_data_comb$uninfected <- 336000000
 
 ```
 
@@ -241,12 +200,12 @@ chart2 <- ggplot(data = us_data_comb)+
   geom_area(aes(x = final_date, y = active, color = "active", fill = "active"))+
   geom_area(aes(x = final_date, y = deaths, color = "deaths", fill ="deaths"))+
   scale_color_manual(name='Legend',
-                     labels = c("Active","Deaths","Recovered","Uninfected"),
+                     labels = c("Active","Deaths","Recovered","Susceptible"),
                      values=c(uninfected="black", recovered="darkgreen", active="darkblue", deaths="red"))+
   scale_fill_manual(name='Legend',
-                    labels = c("Active","Deaths","Recovered","Uninfected"),
+                    labels = c("Active","Deaths","Recovered","Susceptible"),
                      values=c(uninfected="black", recovered="darkgreen", active="darkblue", deaths="red"))+
-  ylim(0,332000000)+
+  ylim(0,336000000)+
   xlab("Date (2020-01-22 to 2023-03-09)")+
   ylab("")+
   theme_minimal()+
@@ -269,9 +228,25 @@ Chart3
 ```
 
 
-## Analysis: 
+## Modeling: 
 
 ```{r}
 
+us_data_comb$case_rate <- (us_data_comb$cases/336000000)*100000
+us_data_comb$death_rate <- (us_data_comb$deaths/336000000)*100000
+
+
+death_case_mod <- lm(death_rate ~ case_rate, data = us_data_comb)
+us_data_comb$death_case_pred <- predict(death_case_mod)
+
+
+chart4 <- ggplot(data = us_data_comb)+
+  geom_point(aes(x = case_rate, y = death_rate), color = "blue")+
+  geom_line(aes(x = case_rate, y = death_case_pred), color = "red")
+
+chart4
+
 ```
 
+
+Bias, missing data and changes in reporting standards. Changes in case definition. Inaccuracies in JHU data. too many factors and individual data sources make it hard to accurately model. 
